@@ -41,17 +41,14 @@ log_recent() {
         [.[] | select(.command != $c)] |
         [{"name":$n,"type":$t,"command":$c,"time":$d}] + . |
         .[0:20]
-    ' "$RECENT_FILE" > "$tmp" && mv "$tmp" "$RECENT_FILE"
+    ' "$RECENT_FILE" > "$tmp" && mv "$tmp" "$RECENT_FILE" &
 }
 
 launch_item() {
     local type="$1" cmd="$2" name="$3"
     log_recent "$name" "$type" "$cmd"
     case "$type" in
-        app)
-            if gtk-launch "$cmd" 2>/dev/null; then return; fi
-            setsid "$cmd" &>/dev/null &
-            ;;
+        app)    setsid "$cmd" &>/dev/null & ;;
         url)    xdg-open "$cmd" &>/dev/null & ;;
         folder) xdg-open "$cmd" &>/dev/null & ;;
         script) setsid bash -c "$cmd" &>/dev/null & ;;
