@@ -45,6 +45,13 @@
   - 原因：`pkill -f "wofi.*Spark"` 匹配不到（prompt 是分类名不是 Spark）
   - 修复：改为匹配配置路径 `pkill -f "wofi.*spark-linux"`
 
+## [0.5.6] - 2026-07-15
+
+### Bug Fixes
+- **修复 fcitx5 候选窗口空白**：wofi 弹出时输入法在中文模式会右侧出现空白窗口
+  - 修复：`GTK_IM_MODULE=xim` 禁用 wofi 的输入法支持
+- **回滚数字键快速选择**：功能导致面板不显示，暂不实现
+
 ## Hyprland 配置变更
 
 ### 冲突键迁移（dotfiles-arch 97ea70d）
