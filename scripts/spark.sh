@@ -27,6 +27,9 @@ done
 mkdir -p "$HISTORY_DIR"
 [[ -f "$RECENT_FILE" ]] || echo '[]' > "$RECENT_FILE"
 
+# Kill any existing spark wofi instance before opening a new one
+pkill -f "wofi.*Spark" 2>/dev/null || true
+
 # ── delimiter (tab) ───────────────────────────────────
 # Format per line: "display_name<TAB>type<TAB>command"
 DELIM=$'\t'
