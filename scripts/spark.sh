@@ -15,23 +15,24 @@ CONFIG_FILE="${SPARK_CONFIG:-$PROJECT_DIR/config/config.json}"
 RECENT_FILE="${XDG_DATA_HOME:-$HOME/.local/share}/spark/recent.json"
 HISTORY_DIR="$(dirname "$RECENT_FILE")"
 
-# ── ensure jq available ───────────────────────────────
-if ! command -v jq &>/dev/null; then
-    notify-send -u critical "Spark" "jq is required. Install: sudo pacman -S jq"
-    exit 1
-fi
-if ! command -v wofi &>/dev/null; then
-    notify-send -u critical "Spark" "wofi is required. Install: sudo pacman -S wofi"
-    exit 1
-fi
+# ── deps check ─────────────────────────────────────────
+for cmd in jq wofi; do
+    if ! command -v "$cmd" &>/dev/null; then
+        notify-send -u critical "Spark" "$cmd is required. Install: sudo pacman -S $cmd"
+        exit 1
+    fi
+done
 
 # ── ensure data dir ───────────────────────────────────
 mkdir -p "$HISTORY_DIR"
 [[ -f "$RECENT_FILE" ]] || echo '[]' > "$RECENT_FILE"
 
+# ── delimiter (tab) ───────────────────────────────────
+# Format per line: "display_name<TAB>type<TAB>command"
+DELIM=$'\t'
+
 # ── helpers ────────────────────────────────────────────
 log_recent() {
-    # $1=name $2=type $3=command
     local now
     now="$(date -Iseconds)"
     local tmp
@@ -44,143 +45,104 @@ log_recent() {
 }
 
 launch_item() {
-    # $1=type  $2=command  $3=name
-    log_recent "$3" "$1" "$2"
-    case "$1" in
+    local type="$1" cmd="$2" name="$3"
+    log_recent "$name" "$type" "$cmd"
+    case "$type" in
         app)
-            # Try desktop entry first, then direct command
-            if gtk-launch "$2" 2>/dev/null; then
-                return
-            fi
-            setsid "$2" &>/dev/null &
+            if gtk-launch "$cmd" 2>/dev/null; then return; fi
+            setsid "$cmd" &>/dev/null &
             ;;
-        url)
-            xdg-open "$2" &>/dev/null &
-            ;;
-        folder)
-            xdg-open "$2" &>/dev/null &
-            ;;
-        script)
-            setsid bash -c "$2" &>/dev/null &
-            ;;
-        *)
-            setsid "$2" &>/dev/null &
-            ;;
+        url)    xdg-open "$cmd" &>/dev/null & ;;
+        folder) xdg-open "$cmd" &>/dev/null & ;;
+        script) setsid bash -c "$cmd" &>/dev/null & ;;
+        *)      setsid "$cmd" &>/dev/null & ;;
     esac
 }
 
+# ── show wofi menu from a temp file ────────────────────
+# $1=prompt  $2=tmpfile path (lines: display<TAB>type<TAB>command)
 show_menu() {
-    # $1=title  $2=entries (newline-separated "name\0type\0command")
-    local title="$1"
-    shift
+    local prompt="$1"
+    local entries_file="$2"
+
     local chosen
-    chosen="$(printf '%s' "$@" | wofi \
+    chosen="$(wofi \
         --dmenu \
-        --prompt "$title" \
+        --prompt "$prompt" \
         --width 450 --height 400 \
         --matching fuzzy \
         --sort-by=alphabetical \
         --allow-markup \
         --conf "$PROJECT_DIR/themes/wofi.conf" \
         --style "$PROJECT_DIR/themes/wofi.css" \
-        2>/dev/null)" || exit 0
+        < "$entries_file" 2>/dev/null)" || exit 0
 
     [[ -z "$chosen" ]] && exit 0
 
-    # Parse: format is "icon name |type|command"
-    local type command name
-    type="$(echo "$chosen" | awk -F'|' '{print $2}')"
-    command="$(echo "$chosen" | awk -F'|' '{print $3}')"
-    name="$(echo "$chosen" | awk -F'|' '{print $1}' | sed 's/^[^ ]* //')"
-    launch_item "$type" "$command" "$name"
+    # Parse tab-separated: display<TAB>type<TAB>command
+    local display type cmd
+    display="$(echo "$chosen" | cut -f1)"
+    type="$(echo "$chosen" | cut -f2)"
+    cmd="$(echo "$chosen" | cut -f3)"
+
+    [[ -z "$type" || -z "$cmd" ]] && exit 1
+    launch_item "$type" "$cmd" "$display"
 }
 
-# ── build category menu entries ────────────────────────
+# ── type icon ──────────────────────────────────────────
+type_icon() {
+    case "$1" in
+        app)    echo " " ;;
+        url)    echo " " ;;
+        folder) echo " " ;;
+        script) echo ">" ;;
+        *)      echo " " ;;
+    esac
+}
+
+# ── build category entries to tmpfile ──────────────────
 build_category_entries() {
     local cat_id="$1"
-    local entries=""
-    local count=0
+    local tmpfile="$2"
 
-    while IFS= read -r item; do
-        count=$((count + 1))
-        local name type cmd icon
-        name="$(echo "$item" | jq -r '.name')"
-        type="$(echo "$item" | jq -r '.type')"
-        cmd="$(echo "$item" | jq -r '.command')"
-        icon="$(case "$type" in
-            app)    echo " " ;;
-            url)    echo " " ;;
-            folder) echo " " ;;
-            script) echo ">" ;;
-            *)      echo " " ;;
-        esac)"
-        entries+="${icon} ${name}|${type}|${cmd}"$'\n'
-    done < <(jq -r --arg id "$cat_id" '
-        .categories[] | select(.id == $id) | .items[]
-    ' "$CONFIG_FILE")
-
-    echo -n "$entries"
+    jq -r --arg id "$cat_id" '
+        .categories[] | select(.id == $id) | .items[] |
+        "\(.name)\t\(.type)\t\(.command)"
+    ' "$CONFIG_FILE" > "$tmpfile"
 }
 
-# ── build all-items for global search ──────────────────
+# ── build all entries for global search ────────────────
 build_all_entries() {
-    local entries=""
-    while IFS= read -r cat; do
-        local cat_name
-        cat_name="$(echo "$cat" | jq -r '.name')"
-        while IFS= read -r item; do
-            local name type cmd icon
-            name="$(echo "$item" | jq -r '.name')"
-            type="$(echo "$item" | jq -r '.type')"
-            cmd="$(echo "$item" | jq -r '.command')"
-            icon="$(case "$type" in
-                app)    echo " " ;;
-                url)    echo " " ;;
-                folder) echo " " ;;
-                script) echo ">" ;;
-                *)      echo " " ;;
-            esac)"
-            entries+="${icon} ${name} [${cat_name}]|${type}|${cmd}"$'\n'
-        done < <(echo "$cat" | jq -c '.items[]')
-    done < <(jq -c '.categories[]' "$CONFIG_FILE")
-    echo -n "$entries"
+    local tmpfile="$1"
+
+    jq -r '
+        .categories[] | .items[] |
+        "\(.name)\t\(.type)\t\(.command)"
+    ' "$CONFIG_FILE" > "$tmpfile"
 }
 
 # ── build recent entries ───────────────────────────────
 build_recent_entries() {
-    local entries=""
-    while IFS= read -r item; do
-        local name type cmd icon
-        name="$(echo "$item" | jq -r '.name')"
-        type="$(echo "$item" | jq -r '.type')"
-        cmd="$(echo "$item" | jq -r '.command')"
-        icon="$(case "$type" in
-            app)    echo " " ;;
-            url)    echo " " ;;
-            folder) echo " " ;;
-            script) echo ">" ;;
-            *)      echo " " ;;
-        esac)"
-        entries+="${icon} ${name}|${type}|${cmd}"$'\n'
-    done < <(jq -c '.[]' "$RECENT_FILE")
-    echo -n "$entries"
+    local tmpfile="$1"
+
+    jq -r '
+        .[] | "\(.name)\t\(.type)\t\(.command)"
+    ' "$RECENT_FILE" > "$tmpfile"
 }
 
-# ── category list mode ─────────────────────────────────
+# ── show category list ─────────────────────────────────
 show_category_list() {
-    local entries=""
-    while IFS= read -r cat; do
-        local id name icon hotkey count
-        id="$(echo "$cat" | jq -r '.id')"
-        name="$(echo "$cat" | jq -r '.name')"
-        icon="$(echo "$cat" | jq -r '.icon')"
-        hotkey="$(echo "$cat" | jq -r '.hotkey')"
-        count="$(echo "$cat" | jq -r '.items | length')"
-        entries+="${icon} ${name} (${count}) — ${hotkey}|cat|${id}"$'\n'
-    done < <(jq -c '.categories[]' "$CONFIG_FILE")
+    local tmpfile
+    tmpfile="$(mktemp)"
+    trap "rm -f '$tmpfile'" EXIT
+
+    jq -r '
+        .categories[] |
+        "\(.icon) \(.name) (\(.items | length)) — \(.hotkey)\tcat\t\(.id)"
+    ' "$CONFIG_FILE" > "$tmpfile"
 
     local chosen
-    chosen="$(printf '%s' "$entries" | wofi \
+    chosen="$(wofi \
         --dmenu \
         --prompt "Spark" \
         --width 400 --height 350 \
@@ -188,16 +150,25 @@ show_category_list() {
         --allow-markup \
         --conf "$PROJECT_DIR/themes/wofi.conf" \
         --style "$PROJECT_DIR/themes/wofi.css" \
-        2>/dev/null)" || exit 0
+        < "$tmpfile" 2>/dev/null)" || exit 0
 
     [[ -z "$chosen" ]] && exit 0
 
     local cat_id
-    cat_id="$(echo "$chosen" | awk -F'|' '{print $3}')"
-    local items
-    items="$(build_category_entries "$cat_id")"
-    [[ -z "$items" ]] && exit 0
-    show_menu "$cat_id" "$items"
+    cat_id="$(echo "$chosen" | cut -f3)"
+
+    # Now show items in that category
+    local items_file
+    items_file="$(mktemp)"
+    trap "rm -f '$tmpfile' '$items_file'" EXIT
+    build_category_entries "$cat_id" "$items_file"
+
+    if [[ ! -s "$items_file" ]]; then
+        notify-send "Spark" "No items in $cat_id"
+        exit 0
+    fi
+
+    show_menu "$cat_id" "$items_file"
 }
 
 # ── main ───────────────────────────────────────────────
@@ -206,17 +177,18 @@ case "${1:---list}" in
         show_category_list
         ;;
     --search|-s)
-        items="$(build_all_entries)"
-        [[ -z "$items" ]] && exit 0
-        show_menu "Search All" "$items"
+        tmpfile="$(mktemp)"
+        trap "rm -f '$tmpfile'" EXIT
+        build_all_entries "$tmpfile"
+        [[ -s "$tmpfile" ]] || { notify-send "Spark" "No items configured"; exit 0; }
+        show_menu "Search All" "$tmpfile"
         ;;
     --recent|-r)
-        items="$(build_recent_entries)"
-        if [[ -z "$items" ]]; then
-            notify-send "Spark" "No recent launches"
-            exit 0
-        fi
-        show_menu "Recent" "$items"
+        tmpfile="$(mktemp)"
+        trap "rm -f '$tmpfile'" EXIT
+        build_recent_entries "$tmpfile"
+        [[ -s "$tmpfile" ]] || { notify-send "Spark" "No recent launches"; exit 0; }
+        show_menu "Recent" "$tmpfile"
         ;;
     --scan)
         exec "$SCRIPT_DIR/scan-apps.sh"
@@ -235,14 +207,15 @@ Usage:
 EOF
         ;;
     *)
-        # Direct category launch
         cat_id="$1"
         if ! jq -e --arg id "$cat_id" '.categories[] | select(.id == $id)' "$CONFIG_FILE" &>/dev/null; then
             notify-send -u critical "Spark" "Category '$cat_id' not found"
             exit 1
         fi
-        items="$(build_category_entries "$cat_id")"
-        [[ -z "$items" ]] && exit 0
-        show_menu "$cat_id" "$items"
+        tmpfile="$(mktemp)"
+        trap "rm -f '$tmpfile'" EXIT
+        build_category_entries "$cat_id" "$tmpfile"
+        [[ -s "$tmpfile" ]] || { notify-send "Spark" "No items in $cat_id"; exit 0; }
+        show_menu "$cat_id" "$tmpfile"
         ;;
 esac
