@@ -1,0 +1,96 @@
+{
+  "categories": [
+    {
+      "id": "code",
+      "name": "Code",
+      "hotkey": "Alt+C",
+      "icon": "",
+      "items": [
+        { "name": "VS Code",       "type": "app",    "command": "code" },
+        { "name": "AstroNvim",      "type": "script", "command": "kitty -e nvim" },
+        { "name": "Lazygit",        "type": "script", "command": "kitty -e lazygit" }
+      ]
+    },
+    {
+      "id": "browser",
+      "name": "Browser",
+      "hotkey": "Alt+B",
+      "icon": "",
+      "items": [
+        { "name": "Firefox",        "type": "app",    "command": "firefox" },
+        { "name": "GitHub",         "type": "url",    "command": "https://github.com" },
+        { "name": "YouTube",        "type": "url",    "command": "https://youtube.com" },
+        { "name": "Bilibili",       "type": "url",    "command": "https://bilibili.com" }
+      ]
+    },
+    {
+      "id": "ai",
+      "name": "AI",
+      "hotkey": "Alt+A",
+      "icon": "",
+      "items": [
+        { "name": "ChatGPT",        "type": "url",    "command": "https://chat.openai.com" },
+        { "name": "Claude",         "type": "url",    "command": "https://claude.ai" },
+        { "name": "Deepseek",       "type": "url",    "command": "https://chat.deepseek.com" },
+        { "name": "Gemini",         "type": "url",    "command": "https://gemini.google.com" }
+      ]
+    },
+    {
+      "id": "document",
+      "name": "Document",
+      "hotkey": "Alt+D",
+      "icon": "",
+      "items": [
+        { "name": "Obsidian",       "type": "app",    "command": "obsidian" },
+        { "name": "File Manager",   "type": "app",    "command": "thunar" }
+      ]
+    },
+    {
+      "id": "tools",
+      "name": "Tools",
+      "hotkey": "Alt+T",
+      "icon": "",
+      "items": [
+        { "name": "Kitty Terminal",  "type": "app",    "command": "kitty" },
+        { "name": "btop",           "type": "script",  "command": "kitty -e btop" },
+        { "name": "Calculator",     "type": "app",    "command": "gnome-calculator" }
+      ]
+    },
+    {
+      "id": "social",
+      "name": "Social",
+      "hotkey": "Alt+S",
+      "icon": "",
+      "items": [
+        { "name": "Discord",        "type": "app",    "command": "discord" },
+        { "name": "Telegram",       "type": "app",    "command": "telegram-desktop" }
+      ]
+    },
+    {
+      "id": "folders",
+      "name": "Folders",
+      "hotkey": "Alt+E",
+      "icon": "",
+      "items": [
+        { "name": "Home",           "type": "folder",  "command": "/home/chrisn" },
+        { "name": "Downloads",      "type": "folder",  "command": "/home/chrisn/Downloads" },
+        { "name": "Documents",      "type": "folder",  "command": "/home/chrisn/Documents" },
+        { "name": "OneDrive",       "type": "folder",  "command": "/home/chrisn/OneDrive" }
+      ]
+    },
+    {
+      "id": "pin",
+      "name": "Pin",
+      "hotkey": "Alt+V",
+      "icon": "",
+      "items": [
+        { "name": "Clash Verge",    "type": "app",    "command": "clash-verge" }
+      ]
+    }
+  ],
+  "settings": {
+    "max_recent": 20,
+    "show_recent": true,
+    "theme": "dark-red"
+  }
+}
