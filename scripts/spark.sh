@@ -23,13 +23,69 @@ for cmd in jq wofi; do
     fi
 done
 
-# ── ensure data dir ───────────────────────────────────
 mkdir -p "$HISTORY_DIR"
 [[ -f "$RECENT_FILE" ]] || echo '[]' > "$RECENT_FILE"
 
-# ── delimiter (tab) ───────────────────────────────────
-# Format per line: "display_name<TAB>type<TAB>command"
-DELIM=$'\t'
+# ── wofi icon format: icon\x1ftext ─────────────────────
+# wofi with allow_images=true uses:  icon_name<US>display_text
+# where <US> = Unit Separator (ASCII 31)
+US=$'\x1f'
+TAB=$'\t'
+
+# ── icon lookup for app command ────────────────────────
+# Try to find a .desktop file whose Exec matches the command
+_icon_for_app() {
+    local cmd="$1"
+    local icon="application-x-executable"
+
+    # Search .desktop files for matching Exec
+    for dir in /usr/share/applications ~/.local/share/applications; do
+        [[ -d "$dir" ]] || continue
+        for f in "$dir"/*.desktop; do
+            [[ -f "$f" ]] || continue
+            local exec_line
+            exec_line="$(grep -m1 '^Exec=' "$f" 2>/dev/null | cut -d= -f2- | sed 's/ *%[fFuUdDnNickvm]//g')"
+            # Match: exec_line contains the command, or command matches the binary name
+            if [[ "$exec_line" == "$cmd"* ]] || [[ "$exec_line" == *"/$cmd "* ]] || [[ "$exec_line" == *"/$cmd" ]]; then
+                local found_icon
+                found_icon="$(grep -m1 '^Icon=' "$f" 2>/dev/null | cut -d= -f2-)"
+                [[ -n "$found_icon" ]] && icon="$found_icon" && break
+            fi
+        done
+        [[ "$icon" != "application-x-executable" ]] && break
+    done
+
+    # Also check if command itself is a known binary
+    if [[ "$icon" == "application-x-executable" ]]; then
+        for dir in /usr/share/applications ~/.local/share/applications; do
+            [[ -d "$dir" ]] || continue
+            for f in "$dir"/*.desktop; do
+                [[ -f "$f" ]] || continue
+                local desktop_name
+                desktop_name="$(basename "$f" .desktop)"
+                if [[ "$desktop_name" == "$cmd" ]] || [[ "$desktop_name" == *"$cmd"* ]]; then
+                    local found_icon
+                    found_icon="$(grep -m1 '^Icon=' "$f" 2>/dev/null | cut -d= -f2-)"
+                    [[ -n "$found_icon" ]] && icon="$found_icon" && break 2
+                fi
+            done
+        done
+    fi
+
+    echo "$icon"
+}
+
+# ── icon for type ──────────────────────────────────────
+icon_for_type() {
+    local type="$1" cmd="$2"
+    case "$type" in
+        app)    _icon_for_app "$cmd" ;;
+        url)    echo "web-browser" ;;
+        folder) echo "folder" ;;
+        script) echo "utilities-terminal" ;;
+        *)      echo "application-x-executable" ;;
+    esac
+}
 
 # ── helpers ────────────────────────────────────────────
 log_recent() {
@@ -60,7 +116,7 @@ launch_item() {
 }
 
 # ── show wofi menu from a temp file ────────────────────
-# $1=prompt  $2=tmpfile path (lines: display<TAB>type<TAB>command)
+# Input file lines: icon<US>display<TAB>type<TAB>command
 show_menu() {
     local prompt="$1"
     local entries_file="$2"
@@ -73,31 +129,21 @@ show_menu() {
         --matching fuzzy \
         --sort-by=alphabetical \
         --allow-markup \
+        --allow-images \
         --conf "$PROJECT_DIR/themes/wofi.conf" \
         --style "$PROJECT_DIR/themes/wofi.css" \
         < "$entries_file" 2>/dev/null)" || exit 0
 
     [[ -z "$chosen" ]] && exit 0
 
-    # Parse tab-separated: display<TAB>type<TAB>command
+    # Parse: icon<US>display<TAB>type<TAB>command
     local display type cmd
-    display="$(echo "$chosen" | cut -f1)"
-    type="$(echo "$chosen" | cut -f2)"
-    cmd="$(echo "$chosen" | cut -f3)"
+    display="$(echo "$chosen" | cut -d"$TAB" -f1 | sed "s/.*${US}//")"
+    type="$(echo "$chosen" | cut -d"$TAB" -f2)"
+    cmd="$(echo "$chosen" | cut -d"$TAB" -f3)"
 
     [[ -z "$type" || -z "$cmd" ]] && exit 1
     launch_item "$type" "$cmd" "$display"
-}
-
-# ── type icon ──────────────────────────────────────────
-type_icon() {
-    case "$1" in
-        app)    echo " " ;;
-        url)    echo " " ;;
-        folder) echo " " ;;
-        script) echo ">" ;;
-        *)      echo " " ;;
-    esac
 }
 
 # ── build category entries to tmpfile ──────────────────
@@ -105,29 +151,41 @@ build_category_entries() {
     local cat_id="$1"
     local tmpfile="$2"
 
-    jq -r --arg id "$cat_id" '
+    while IFS="$TAB" read -r name type cmd; do
+        local icon
+        icon="$(icon_for_type "$type" "$cmd")"
+        echo "${icon}${US}${name}${TAB}${type}${TAB}${cmd}"
+    done < <(jq -r --arg id "$cat_id" '
         .categories[] | select(.id == $id) | .items[] |
         "\(.name)\t\(.type)\t\(.command)"
-    ' "$CONFIG_FILE" > "$tmpfile"
+    ' "$CONFIG_FILE") > "$tmpfile"
 }
 
 # ── build all entries for global search ────────────────
 build_all_entries() {
     local tmpfile="$1"
 
-    jq -r '
+    while IFS="$TAB" read -r name type cmd; do
+        local icon
+        icon="$(icon_for_type "$type" "$cmd")"
+        echo "${icon}${US}${name}${TAB}${type}${TAB}${cmd}"
+    done < <(jq -r '
         .categories[] | .items[] |
         "\(.name)\t\(.type)\t\(.command)"
-    ' "$CONFIG_FILE" > "$tmpfile"
+    ' "$CONFIG_FILE") > "$tmpfile"
 }
 
 # ── build recent entries ───────────────────────────────
 build_recent_entries() {
     local tmpfile="$1"
 
-    jq -r '
+    while IFS="$TAB" read -r name type cmd; do
+        local icon
+        icon="$(icon_for_type "$type" "$cmd")"
+        echo "${icon}${US}${name}${TAB}${type}${TAB}${cmd}"
+    done < <(jq -r '
         .[] | "\(.name)\t\(.type)\t\(.command)"
-    ' "$RECENT_FILE" > "$tmpfile"
+    ' "$RECENT_FILE") > "$tmpfile"
 }
 
 # ── show category list ─────────────────────────────────
@@ -136,10 +194,25 @@ show_category_list() {
     tmpfile="$(mktemp)"
     trap "rm -f '$tmpfile'" EXIT
 
+    # Category icons — use GTK icon names
+    local -A cat_icons=(
+        [code]="accessories-text-editor"
+        [browser]="web-browser"
+        [ai]="preferences-system"
+        [document]="x-office-document"
+        [tools]="utilities-terminal"
+        [social]="internet-chat"
+        [folders]="folder"
+        [pin]="view-pin"
+    )
+
     jq -r '
         .categories[] |
-        "\(.icon) \(.name) (\(.items | length)) — \(.hotkey)\tcat\t\(.id)"
-    ' "$CONFIG_FILE" > "$tmpfile"
+        "\(.id)\t\(.name)\t\(.items | length)\t\(.hotkey)"
+    ' "$CONFIG_FILE" | while IFS="$TAB" read -r id name count hotkey; do
+        local icon="${cat_icons[$id]:-application-x-executable}"
+        echo "${icon}${US}${name} (${count}) — ${hotkey}${TAB}cat${TAB}${id}"
+    done > "$tmpfile"
 
     local chosen
     chosen="$(wofi \
@@ -147,7 +220,7 @@ show_category_list() {
         --prompt "Spark" \
         --width 400 --height 350 \
         --matching fuzzy \
-        --allow-markup \
+        --allow-images \
         --conf "$PROJECT_DIR/themes/wofi.conf" \
         --style "$PROJECT_DIR/themes/wofi.css" \
         < "$tmpfile" 2>/dev/null)" || exit 0
@@ -155,19 +228,14 @@ show_category_list() {
     [[ -z "$chosen" ]] && exit 0
 
     local cat_id
-    cat_id="$(echo "$chosen" | cut -f3)"
+    cat_id="$(echo "$chosen" | cut -d"$TAB" -f3)"
 
-    # Now show items in that category
     local items_file
     items_file="$(mktemp)"
     trap "rm -f '$tmpfile' '$items_file'" EXIT
     build_category_entries "$cat_id" "$items_file"
 
-    if [[ ! -s "$items_file" ]]; then
-        notify-send "Spark" "No items in $cat_id"
-        exit 0
-    fi
-
+    [[ -s "$items_file" ]] || { notify-send "Spark" "No items in $cat_id"; exit 0; }
     show_menu "$cat_id" "$items_file"
 }
 
