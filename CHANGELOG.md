@@ -52,6 +52,11 @@
   - 修复：`GTK_IM_MODULE=xim` 禁用 wofi 的输入法支持
 - **回滚数字键快速选择**：功能导致面板不显示，暂不实现
 
+### 发现并修复（fcitx5 通用问题）
+- **Shift 切换英文时拼音残留**：输入拼音后按 Shift 切英文，回车时自动切回拼音
+  - 原因：rime 默认 `inline_ascii` 策略，预编辑不提交
+  - 修复：`ascii_composer/switch_key: Shift_L/R: commit_code`（dotfiles-arch 2a9c9e8）
+
 ## Hyprland 配置变更
 
 ### 冲突键迁移（dotfiles-arch 97ea70d）
