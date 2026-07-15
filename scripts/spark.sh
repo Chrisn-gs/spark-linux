@@ -79,9 +79,9 @@ show_menu() {
 
     [[ -z "$chosen" ]] && exit 0
 
-    # Parse tab-separated: display<TAB>type<TAB>command
+    # Parse tab-separated: N. display<TAB>type<TAB>command
     local display type cmd
-    display="$(echo "$chosen" | cut -f1)"
+    display="$(echo "$chosen" | cut -f1 | sed 's/^[0-9]*\. //')"
     type="$(echo "$chosen" | cut -f2)"
     cmd="$(echo "$chosen" | cut -f3)"
 
@@ -105,10 +105,14 @@ build_category_entries() {
     local cat_id="$1"
     local tmpfile="$2"
 
-    jq -r --arg id "$cat_id" '
+    local n=0
+    while IFS="$TAB" read -r name type cmd; do
+        n=$((n + 1))
+        echo "${n}. ${name}${TAB}${type}${TAB}${cmd}"
+    done < <(jq -r --arg id "$cat_id" '
         .categories[] | select(.id == $id) | .items[] |
         "\(.name)\t\(.type)\t\(.command)"
-    ' "$CONFIG_FILE" > "$tmpfile"
+    ' "$CONFIG_FILE") > "$tmpfile"
 }
 
 # ── build all entries for global search ────────────────
