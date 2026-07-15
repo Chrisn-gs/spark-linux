@@ -7,10 +7,11 @@
 - **多组合键分类启动** — Alt+C(code), Alt+B(browser), Alt+A(AI) 等
 - **全局搜索** — Alt+Space 搜索所有类别的所有项目
 - **最近使用** — Alt+R 查看启动历史
-- **模糊搜索** — 输入关键词快速筛选
+- **搜索过滤** — 输入关键词快速筛选
 - **多种项目类型** — app / url / folder / script
 - **自动扫描** — 扫描 .desktop 文件，一键导入已安装应用
 - **Dark Red 主题** — 匹配 Hyprland #8B0000 配色
+- **多面板互斥** — 切换分类时自动关闭旧面板
 
 ## 依赖
 
@@ -46,30 +47,19 @@ chmod +x ~/spark-linux/scripts/*.sh
 
 ## 配置 Hyprland 快捷键
 
-```bash
-# 复制快捷键配置
-cp ~/spark-linux/config/spark-binds.conf ~/.config/hypr/
+在 hyprland.lua 中添加：
 
-# 在 hyprland.conf 中添加
-source = ~/.config/hypr/spark-binds.conf
+```lua
+require("spark-binds")
 ```
+
+然后复制 `config/spark-binds.lua` 到 `~/.config/hypr/`。
+
+注意：Spark 占用了 ALT+C/B/A/D/T/S/E/V/SPACE/R，原 Hyprland 的 ALT+T/E/S/R/SPACE 已迁移到 SUPER 键。
 
 ## 自定义配置
 
-编辑 `config/config.json`：
-
-```json
-{
-  "id": "my-category",
-  "name": "My Category",
-  "hotkey": "Alt+M",
-  "icon": "",
-  "items": [
-    { "name": "My App", "type": "app", "command": "my-app" },
-    { "name": "My Site", "type": "url", "command": "https://example.com" }
-  ]
-}
-```
+编辑 `config/config.json`，添加或修改分类和项目。
 
 ### 项目类型
 
@@ -80,22 +70,6 @@ source = ~/.config/hypr/spark-binds.conf
 | `folder` | 文件夹 | `/home/chrisn/Downloads` |
 | `script` | Shell 脚本 | `kitty -e btop` |
 
-## 目录结构
-
-```
-spark-linux/
-├── scripts/
-│   ├── spark.sh          # 主启动脚本
-│   └── scan-apps.sh      # .desktop 扫描导入
-├── themes/
-│   ├── wofi.conf          # wofi 配置
-│   └── wofi.css           # Dark Red 主题样式
-├── config/
-│   ├── config.json        # 分类与项目配置
-│   └── spark-binds.conf   # Hyprland 快捷键片段
-└── README.md
-```
-
 ## 快捷键
 
 | 按键 | 功能 |
@@ -104,7 +78,24 @@ spark-linux/
 | `Enter` | 启动选中项目 |
 | `Esc` | 关闭 |
 | `Tab` | 补全 |
-| 输入关键词 | 模糊搜索过滤 |
+| 输入关键词 | 搜索过滤 |
+
+## 目录结构
+
+```
+spark-linux/
+├── scripts/
+│   ├── spark.sh          # 主启动脚本
+│   └── scan-apps.sh      # .desktop 文件扫描导入
+├── themes/
+│   ├── wofi.conf          # wofi 配置
+│   └── wofi.css           # Dark Red 主题样式
+├── config/
+│   ├── config.json        # 分类与项目配置
+│   └── spark-binds.conf   # Hyprland 快捷键片段（.conf 格式）
+├── CHANGELOG.md           # 变更日志
+└── README.md
+```
 
 ## 许可证
 
