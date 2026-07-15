@@ -66,7 +66,7 @@ show_menu() {
     local entries_file="$2"
 
     local chosen
-    chosen="$(GTK_IM_MODULE=xim wofi \
+    chosen="$(GTK_IM_MODULE= wofi \
         --dmenu \
         --prompt "$prompt" \
         --width 450 --height 400 \
@@ -142,7 +142,7 @@ show_category_list() {
     ' "$CONFIG_FILE" > "$tmpfile"
 
     local chosen
-    chosen="$(GTK_IM_MODULE=xim wofi \
+    chosen="$(GTK_IM_MODULE= wofi \
         --dmenu \
         --prompt "Spark" \
         --width 400 --height 350 \
