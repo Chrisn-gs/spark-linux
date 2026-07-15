@@ -26,65 +26,110 @@ done
 mkdir -p "$HISTORY_DIR"
 [[ -f "$RECENT_FILE" ]] || echo '[]' > "$RECENT_FILE"
 
-# ── wofi icon format: icon\x1ftext ─────────────────────
-# wofi with allow_images=true uses:  icon_name<US>display_text
-# where <US> = Unit Separator (ASCII 31)
-US=$'\x1f'
 TAB=$'\t'
 
-# ── icon lookup for app command ────────────────────────
-# Try to find a .desktop file whose Exec matches the command
+# ── find icon file on disk for a given icon name ───────
+# Searches hicolor theme for the best match
+_icon_file() {
+    local name="$1"
+    local size="${2:-24}"
+
+    # If it's already an absolute path and exists, use it
+    [[ -f "$name" ]] && echo "$name" && return
+
+    # Search icon theme directories (prefer scalable, then exact size, then 48)
+    local -a search_sizes=("scalable" "${size}x${size}" "48x48" "32x32" "24x24" "16x16" "128x128")
+    local -a search_dirs=("/usr/share/icons/hicolor" "/usr/share/icons/Adwaita" "/usr/share/icons/AdwaitaLegacy" "/usr/share/pixmaps")
+
+    for dir in "${search_dirs[@]}"; do
+        [[ -d "$dir" ]] || continue
+        # Check pixmaps first (flat directory)
+        if [[ "$dir" == *"pixmaps"* ]]; then
+            for ext in png svg xpm; do
+                if [[ -f "$dir/${name}.${ext}" ]]; then
+                    echo "$dir/${name}.${ext}"
+                    return
+                fi
+            done
+            continue
+        fi
+        for sz in "${search_sizes[@]}"; do
+            for subdir in apps devices places legacy mimetypes; do
+                for ext in png svg; do
+                    local path="$dir/$sz/$subdir/${name}.${ext}"
+                    if [[ -f "$path" ]]; then
+                        echo "$path"
+                        return
+                    fi
+                done
+            done
+        done
+    done
+
+    # Fallback: return empty (no icon)
+    echo ""
+}
+
+# ── look up Icon= from .desktop file ───────────────────
 _icon_for_app() {
     local cmd="$1"
-    local icon="application-x-executable"
 
-    # Search .desktop files for matching Exec
     for dir in /usr/share/applications ~/.local/share/applications; do
         [[ -d "$dir" ]] || continue
         for f in "$dir"/*.desktop; do
             [[ -f "$f" ]] || continue
             local exec_line
             exec_line="$(grep -m1 '^Exec=' "$f" 2>/dev/null | cut -d= -f2- | sed 's/ *%[fFuUdDnNickvm]//g')"
-            # Match: exec_line contains the command, or command matches the binary name
-            if [[ "$exec_line" == "$cmd"* ]] || [[ "$exec_line" == *"/$cmd "* ]] || [[ "$exec_line" == *"/$cmd" ]]; then
-                local found_icon
-                found_icon="$(grep -m1 '^Icon=' "$f" 2>/dev/null | cut -d= -f2-)"
-                [[ -n "$found_icon" ]] && icon="$found_icon" && break
+            # Match exec_line starts with cmd, or contains /cmd, or desktop name matches
+            local desktop_name
+            desktop_name="$(basename "$f" .desktop)"
+            if [[ "$exec_line" == "$cmd"* ]] || [[ "$exec_line" == *"/$cmd "* ]] || \
+               [[ "$exec_line" == *"/$cmd" ]] || [[ "$desktop_name" == "$cmd" ]]; then
+                local icon_name
+                icon_name="$(grep -m1 '^Icon=' "$f" 2>/dev/null | cut -d= -f2-)"
+                if [[ -n "$icon_name" ]]; then
+                    local icon_path
+                    icon_path="$(_icon_file "$icon_name")"
+                    [[ -n "$icon_path" ]] && echo "$icon_path" && return
+                fi
             fi
         done
-        [[ "$icon" != "application-x-executable" ]] && break
     done
 
-    # Also check if command itself is a known binary
-    if [[ "$icon" == "application-x-executable" ]]; then
-        for dir in /usr/share/applications ~/.local/share/applications; do
-            [[ -d "$dir" ]] || continue
-            for f in "$dir"/*.desktop; do
-                [[ -f "$f" ]] || continue
-                local desktop_name
-                desktop_name="$(basename "$f" .desktop)"
-                if [[ "$desktop_name" == "$cmd" ]] || [[ "$desktop_name" == *"$cmd"* ]]; then
-                    local found_icon
-                    found_icon="$(grep -m1 '^Icon=' "$f" 2>/dev/null | cut -d= -f2-)"
-                    [[ -n "$found_icon" ]] && icon="$found_icon" && break 2
-                fi
-            done
-        done
-    fi
-
-    echo "$icon"
+    echo ""
 }
 
-# ── icon for type ──────────────────────────────────────
-icon_for_type() {
+# ── icon path for an entry ─────────────────────────────
+icon_for() {
     local type="$1" cmd="$2"
+    local icon_path=""
+
     case "$type" in
-        app)    _icon_for_app "$cmd" ;;
-        url)    echo "web-browser" ;;
-        folder) echo "folder" ;;
-        script) echo "utilities-terminal" ;;
-        *)      echo "application-x-executable" ;;
+        app)    icon_path="$(_icon_for_app "$cmd)" ;;
+        url)    icon_path="$(_icon_file "web-browser")" ;;
+        folder) icon_path="$(_icon_file "folder")" ;;
+        script) icon_path="$(_icon_file "utilities-terminal")" ;;
     esac
+
+    # Fallback
+    [[ -z "$icon_path" ]] && icon_path="$(_icon_file "application-x-executable")"
+    [[ -z "$icon_path" ]] && icon_path="$(_icon_file "exec")"
+
+    echo "$icon_path"
+}
+
+# ── format a wofi entry with image ─────────────────────
+# wofi dmenu image format: img:/path/to/file  text
+format_entry() {
+    local name="$1" type="$2" cmd="$3"
+    local icon_path
+    icon_path="$(icon_for "$type" "$cmd")"
+
+    if [[ -n "$icon_path" ]]; then
+        echo "img:${icon_path}  ${name}${TAB}${type}${TAB}${cmd}"
+    else
+        echo "${name}${TAB}${type}${TAB}${cmd}"
+    fi
 }
 
 # ── helpers ────────────────────────────────────────────
@@ -116,7 +161,6 @@ launch_item() {
 }
 
 # ── show wofi menu from a temp file ────────────────────
-# Input file lines: icon<US>display<TAB>type<TAB>command
 show_menu() {
     local prompt="$1"
     local entries_file="$2"
@@ -128,7 +172,6 @@ show_menu() {
         --width 450 --height 400 \
         --matching fuzzy \
         --sort-by=alphabetical \
-        --allow-markup \
         --allow-images \
         --conf "$PROJECT_DIR/themes/wofi.conf" \
         --style "$PROJECT_DIR/themes/wofi.css" \
@@ -136,53 +179,47 @@ show_menu() {
 
     [[ -z "$chosen" ]] && exit 0
 
-    # Parse: icon<US>display<TAB>type<TAB>command
+    # Strip img: prefix if present, then parse tabs
+    local clean
+    clean="$(echo "$chosen" | sed 's|^img:[^ ]*  ||')"
     local display type cmd
-    display="$(echo "$chosen" | cut -d"$TAB" -f1 | sed "s/.*${US}//")"
-    type="$(echo "$chosen" | cut -d"$TAB" -f2)"
-    cmd="$(echo "$chosen" | cut -d"$TAB" -f3)"
+    display="$(echo "$clean" | cut -d"$TAB" -f1)"
+    type="$(echo "$clean" | cut -d"$TAB" -f2)"
+    cmd="$(echo "$clean" | cut -d"$TAB" -f3)"
 
     [[ -z "$type" || -z "$cmd" ]] && exit 1
     launch_item "$type" "$cmd" "$display"
 }
 
-# ── build category entries to tmpfile ──────────────────
+# ── build entries ──────────────────────────────────────
 build_category_entries() {
     local cat_id="$1"
     local tmpfile="$2"
 
     while IFS="$TAB" read -r name type cmd; do
-        local icon
-        icon="$(icon_for_type "$type" "$cmd")"
-        echo "${icon}${US}${name}${TAB}${type}${TAB}${cmd}"
+        format_entry "$name" "$type" "$cmd"
     done < <(jq -r --arg id "$cat_id" '
         .categories[] | select(.id == $id) | .items[] |
         "\(.name)\t\(.type)\t\(.command)"
     ' "$CONFIG_FILE") > "$tmpfile"
 }
 
-# ── build all entries for global search ────────────────
 build_all_entries() {
     local tmpfile="$1"
 
     while IFS="$TAB" read -r name type cmd; do
-        local icon
-        icon="$(icon_for_type "$type" "$cmd")"
-        echo "${icon}${US}${name}${TAB}${type}${TAB}${cmd}"
+        format_entry "$name" "$type" "$cmd"
     done < <(jq -r '
         .categories[] | .items[] |
         "\(.name)\t\(.type)\t\(.command)"
     ' "$CONFIG_FILE") > "$tmpfile"
 }
 
-# ── build recent entries ───────────────────────────────
 build_recent_entries() {
     local tmpfile="$1"
 
     while IFS="$TAB" read -r name type cmd; do
-        local icon
-        icon="$(icon_for_type "$type" "$cmd")"
-        echo "${icon}${US}${name}${TAB}${type}${TAB}${cmd}"
+        format_entry "$name" "$type" "$cmd"
     done < <(jq -r '
         .[] | "\(.name)\t\(.type)\t\(.command)"
     ' "$RECENT_FILE") > "$tmpfile"
@@ -194,7 +231,6 @@ show_category_list() {
     tmpfile="$(mktemp)"
     trap "rm -f '$tmpfile'" EXIT
 
-    # Category icons — use GTK icon names
     local -A cat_icons=(
         [code]="accessories-text-editor"
         [browser]="web-browser"
@@ -206,13 +242,19 @@ show_category_list() {
         [pin]="view-pin"
     )
 
-    jq -r '
+    > "$tmpfile"
+    while IFS="$TAB" read -r id name count hotkey; do
+        local icon_path="${cat_icons[$id]:-application-x-executable}"
+        icon_path="$(_icon_file "$icon_path")"
+        if [[ -n "$icon_path" ]]; then
+            echo "img:${icon_path}  ${name} (${count}) — ${hotkey}${TAB}cat${TAB}${id}"
+        else
+            echo "${name} (${count}) — ${hotkey}${TAB}cat${TAB}${id}"
+        fi
+    done < <(jq -r '
         .categories[] |
         "\(.id)\t\(.name)\t\(.items | length)\t\(.hotkey)"
-    ' "$CONFIG_FILE" | while IFS="$TAB" read -r id name count hotkey; do
-        local icon="${cat_icons[$id]:-application-x-executable}"
-        echo "${icon}${US}${name} (${count}) — ${hotkey}${TAB}cat${TAB}${id}"
-    done > "$tmpfile"
+    ' "$CONFIG_FILE") >> "$tmpfile"
 
     local chosen
     chosen="$(wofi \
@@ -227,8 +269,10 @@ show_category_list() {
 
     [[ -z "$chosen" ]] && exit 0
 
+    local clean
+    clean="$(echo "$chosen" | sed 's|^img:[^ ]*  ||')"
     local cat_id
-    cat_id="$(echo "$chosen" | cut -d"$TAB" -f3)"
+    cat_id="$(echo "$clean" | cut -d"$TAB" -f3)"
 
     local items_file
     items_file="$(mktemp)"
@@ -241,9 +285,7 @@ show_category_list() {
 
 # ── main ───────────────────────────────────────────────
 case "${1:---list}" in
-    --list|-l)
-        show_category_list
-        ;;
+    --list|-l)       show_category_list ;;
     --search|-s)
         tmpfile="$(mktemp)"
         trap "rm -f '$tmpfile'" EXIT
@@ -258,9 +300,7 @@ case "${1:---list}" in
         [[ -s "$tmpfile" ]] || { notify-send "Spark" "No recent launches"; exit 0; }
         show_menu "Recent" "$tmpfile"
         ;;
-    --scan)
-        exec "$SCRIPT_DIR/scan-apps.sh"
-        ;;
+    --scan)          exec "$SCRIPT_DIR/scan-apps.sh" ;;
     --help|-h)
         cat <<'EOF'
 Spark for Linux — wofi-based quick launcher
