@@ -170,8 +170,6 @@ show_menu() {
         --dmenu \
         --prompt "$prompt" \
         --width 450 --height 400 \
-        --matching fuzzy \
-        --sort-by=alphabetical \
         --allow-images \
         --conf "$PROJECT_DIR/themes/wofi.conf" \
         --style "$PROJECT_DIR/themes/wofi.css" \
@@ -261,7 +259,6 @@ show_category_list() {
         --dmenu \
         --prompt "Spark" \
         --width 400 --height 350 \
-        --matching fuzzy \
         --allow-images \
         --conf "$PROJECT_DIR/themes/wofi.conf" \
         --style "$PROJECT_DIR/themes/wofi.css" \
