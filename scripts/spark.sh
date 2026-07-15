@@ -105,7 +105,7 @@ icon_for() {
     local icon_path=""
 
     case "$type" in
-        app)    icon_path="$(_icon_for_app "$cmd)" ;;
+        app)    icon_path="$(_icon_for_app "$cmd")" ;;
         url)    icon_path="$(_icon_file "web-browser")" ;;
         folder) icon_path="$(_icon_file "folder")" ;;
         script) icon_path="$(_icon_file "utilities-terminal")" ;;
