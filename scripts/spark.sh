@@ -52,7 +52,7 @@ launch_item() {
     log_recent "$name" "$type" "$cmd"
     case "$type" in
         app)    setsid "$cmd" &>/dev/null & ;;
-        url)    xdg-open "$cmd" &>/dev/null & ;;
+        url)    setsid firefox "$cmd" &>/dev/null & ;;
         folder) xdg-open "$cmd" &>/dev/null & ;;
         script) setsid bash -c "$cmd" &>/dev/null & ;;
         *)      setsid "$cmd" &>/dev/null & ;;
